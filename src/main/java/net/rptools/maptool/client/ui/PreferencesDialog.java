@@ -22,10 +22,14 @@ import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.awt.event.ItemEvent;
 import java.awt.event.ItemListener;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.text.ParseException;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.ServiceConfigurationError;
+import java.util.stream.Stream;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
@@ -44,8 +48,10 @@ import javax.swing.event.ChangeListener;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import net.rptools.lib.swing.SwingUtil;
+import net.rptools.maptool.client.AppConstants;
 import net.rptools.maptool.client.AppPreferences;
 import net.rptools.maptool.client.MapTool;
+import net.rptools.maptool.client.functions.MediaPlayerAdapter;
 import net.rptools.maptool.client.walker.WalkerMetric;
 import net.rptools.maptool.model.Grid;
 import net.rptools.maptool.model.GridFactory;
@@ -54,6 +60,7 @@ import net.rptools.maptool.model.Zone;
 import net.rptools.maptool.util.StringUtil;
 import net.rptools.maptool.util.UserJvmPrefs;
 import net.rptools.maptool.util.UserJvmPrefs.JVM_OPTION;
+import org.apache.commons.io.FilenameUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -61,7 +68,7 @@ public class PreferencesDialog extends JDialog {
   private static final Logger log = LogManager.getLogger(PreferencesDialog.class);
 
   /** @author frank */
-  private abstract class DocumentListenerProxy implements DocumentListener {
+  private abstract class DocumentListenerProxy<T> implements DocumentListener {
     JTextField comp;
 
     public DocumentListenerProxy(JTextField tf) {
@@ -82,14 +89,15 @@ public class PreferencesDialog extends JDialog {
 
     protected void updateValue() {
       try {
-        int value = StringUtil.parseInteger(comp.getText()); // Localized
-        storeNumericValue(value);
+        storeNumericValue(convertString(comp.getText())); // Localized
       } catch (ParseException nfe) {
         // Ignore it
       }
     }
 
-    protected abstract void storeNumericValue(int value);
+    protected abstract T convertString(String value) throws ParseException;
+
+    protected abstract void storeNumericValue(T value);
   }
 
   /** @author frank */
@@ -110,6 +118,8 @@ public class PreferencesDialog extends JDialog {
   private final JCheckBox newMapsHaveFOWCheckBox;
   private final JCheckBox tokensPopupWarningWhenDeletedCheckBox;
   private final JCheckBox tokensStartSnapToGridCheckBox;
+  private final JCheckBox tokensSnapWhileDraggingCheckBox;
+  private final JCheckBox hideMousePointerWhileDraggingCheckBox;
   private final JCheckBox newMapsVisibleCheckBox;
   private final JCheckBox newTokensVisibleCheckBox;
   private final JCheckBox tokensStartFreeSizeCheckBox;
@@ -135,6 +145,7 @@ public class PreferencesDialog extends JDialog {
   private final JCheckBox autoRevealVisionOnGMMoveCheckBox;
   private final JCheckBox showSmiliesCheckBox;
   private final JCheckBox playSystemSoundCheckBox;
+  private final JCheckBox playStreamsCheckBox;
   private final JCheckBox playSystemSoundOnlyWhenNotFocusedCheckBox;
   private final JCheckBox syrinscapeActiveCheckBox;
 
@@ -152,6 +163,8 @@ public class PreferencesDialog extends JDialog {
   private final JSpinner chatAutosaveTime;
   private final JTextField chatFilenameFormat;
   private final JSpinner typingNotificationDuration;
+
+  private final JComboBox macroEditorThemeCombo;
 
   // Chat Notification
   private final JETAColorWell chatNotificationColor;
@@ -243,6 +256,8 @@ public class PreferencesDialog extends JDialog {
         panel.getCheckBox("tokensPopupWarningWhenDeletedCheckBox"); // new
     // JCheckBox();//panel.getCheckBox("testCheckBox");
     tokensStartSnapToGridCheckBox = panel.getCheckBox("tokensStartSnapToGridCheckBox");
+    tokensSnapWhileDraggingCheckBox = panel.getCheckBox("tokensSnapWhileDragging");
+    hideMousePointerWhileDraggingCheckBox = panel.getCheckBox("hideMousePointerWhileDragging");
     newMapsVisibleCheckBox = panel.getCheckBox("newMapsVisibleCheckBox");
     newTokensVisibleCheckBox = panel.getCheckBox("newTokensVisibleCheckBox");
     stampsStartFreeSizeCheckBox = panel.getCheckBox("stampsStartFreeSize");
@@ -267,6 +282,7 @@ public class PreferencesDialog extends JDialog {
     autoRevealVisionOnGMMoveCheckBox = panel.getCheckBox("autoRevealVisionOnGMMoveCheckBox");
     showSmiliesCheckBox = panel.getCheckBox("showSmiliesCheckBox");
     playSystemSoundCheckBox = panel.getCheckBox("playSystemSounds");
+    playStreamsCheckBox = panel.getCheckBox("playStreams");
     playSystemSoundOnlyWhenNotFocusedCheckBox = panel.getCheckBox("soundsOnlyWhenNotFocused");
     syrinscapeActiveCheckBox = panel.getCheckBox("syrinscapeActive");
     showAvatarInChat = panel.getCheckBox("showChatAvatar");
@@ -287,6 +303,8 @@ public class PreferencesDialog extends JDialog {
 
     chatAutosaveTime = panel.getSpinner("chatAutosaveTime");
     chatFilenameFormat = panel.getTextField("chatFilenameFormat");
+
+    macroEditorThemeCombo = panel.getComboBox("macroEditorThemeCombo");
 
     fitGMView = panel.getCheckBox("fitGMView");
     hideNPCs = panel.getCheckBox("hideNPCs");
@@ -353,21 +371,31 @@ public class PreferencesDialog extends JDialog {
     toolTipInitialDelay
         .getDocument()
         .addDocumentListener(
-            new DocumentListenerProxy(toolTipInitialDelay) {
+            new DocumentListenerProxy<Integer>(toolTipInitialDelay) {
               @Override
-              protected void storeNumericValue(int value) {
+              protected void storeNumericValue(Integer value) {
                 AppPreferences.setToolTipInitialDelay(value);
                 ToolTipManager.sharedInstance().setInitialDelay(value);
+              }
+
+              @Override
+              protected Integer convertString(String value) throws ParseException {
+                return StringUtil.parseInteger(value);
               }
             });
     toolTipDismissDelay
         .getDocument()
         .addDocumentListener(
-            new DocumentListenerProxy(toolTipDismissDelay) {
+            new DocumentListenerProxy<Integer>(toolTipDismissDelay) {
               @Override
-              protected void storeNumericValue(int value) {
+              protected void storeNumericValue(Integer value) {
                 AppPreferences.setToolTipDismissDelay(value);
                 ToolTipManager.sharedInstance().setDismissDelay(value);
+              }
+
+              @Override
+              protected Integer convertString(String value) throws ParseException {
+                return StringUtil.parseInteger(value);
               }
             });
 
@@ -500,6 +528,19 @@ public class PreferencesDialog extends JDialog {
             AppPreferences.setTokensStartSnapToGrid(tokensStartSnapToGridCheckBox.isSelected());
           }
         });
+    tokensSnapWhileDraggingCheckBox.addActionListener(
+        new ActionListener() {
+          public void actionPerformed(ActionEvent e) {
+            AppPreferences.setTokensSnapWhileDragging(tokensSnapWhileDraggingCheckBox.isSelected());
+          }
+        });
+    hideMousePointerWhileDraggingCheckBox.addActionListener(
+        new ActionListener() {
+          public void actionPerformed(ActionEvent e) {
+            AppPreferences.setHideMousePointerWhileDragging(
+                hideMousePointerWhileDraggingCheckBox.isSelected());
+          }
+        });
     newMapsVisibleCheckBox.addActionListener(
         new ActionListener() {
           public void actionPerformed(ActionEvent e) {
@@ -571,38 +612,58 @@ public class PreferencesDialog extends JDialog {
     defaultGridSizeTextField
         .getDocument()
         .addDocumentListener(
-            new DocumentListenerProxy(defaultGridSizeTextField) {
+            new DocumentListenerProxy<Integer>(defaultGridSizeTextField) {
               @Override
-              protected void storeNumericValue(int value) {
+              protected void storeNumericValue(Integer value) {
                 AppPreferences.setDefaultGridSize(value);
+              }
+
+              @Override
+              protected Integer convertString(String value) throws ParseException {
+                return StringUtil.parseInteger(value);
               }
             });
 
     defaultUnitsPerCellTextField
         .getDocument()
         .addDocumentListener(
-            new DocumentListenerProxy(defaultUnitsPerCellTextField) {
+            new DocumentListenerProxy<Double>(defaultUnitsPerCellTextField) {
               @Override
-              protected void storeNumericValue(int value) {
+              protected void storeNumericValue(Double value) {
                 AppPreferences.setDefaultUnitsPerCell(value);
+              }
+
+              @Override
+              protected Double convertString(String value) throws ParseException {
+                return StringUtil.parseDecimal(value);
               }
             });
     defaultVisionDistanceTextField
         .getDocument()
         .addDocumentListener(
-            new DocumentListenerProxy(defaultVisionDistanceTextField) {
+            new DocumentListenerProxy<Integer>(defaultVisionDistanceTextField) {
               @Override
-              protected void storeNumericValue(int value) {
+              protected void storeNumericValue(Integer value) {
                 AppPreferences.setDefaultVisionDistance(value);
+              }
+
+              @Override
+              protected Integer convertString(String value) throws ParseException {
+                return StringUtil.parseInteger(value);
               }
             });
     statsheetPortraitSize
         .getDocument()
         .addDocumentListener(
-            new DocumentListenerProxy(statsheetPortraitSize) {
+            new DocumentListenerProxy<Integer>(statsheetPortraitSize) {
               @Override
-              protected void storeNumericValue(int value) {
+              protected void storeNumericValue(Integer value) {
                 AppPreferences.setPortraitSize(value);
+              }
+
+              @Override
+              protected Integer convertString(String value) throws ParseException {
+                return StringUtil.parseInteger(value);
               }
             });
     haloLineWidthSpinner.addChangeListener(
@@ -674,6 +735,14 @@ public class PreferencesDialog extends JDialog {
           }
         });
 
+    playStreamsCheckBox.addActionListener(
+        new ActionListener() {
+          public void actionPerformed(ActionEvent e) {
+            AppPreferences.setPlayStreams(playStreamsCheckBox.isSelected());
+            if (!playStreamsCheckBox.isSelected()) MediaPlayerAdapter.stopStream("*", true, 0);
+          }
+        });
+
     playSystemSoundOnlyWhenNotFocusedCheckBox.addActionListener(
         new ActionListener() {
           public void actionPerformed(ActionEvent e) {
@@ -692,10 +761,15 @@ public class PreferencesDialog extends JDialog {
     fontSizeTextField
         .getDocument()
         .addDocumentListener(
-            new DocumentListenerProxy(fontSizeTextField) {
+            new DocumentListenerProxy<Integer>(fontSizeTextField) {
               @Override
-              protected void storeNumericValue(int value) {
+              protected void storeNumericValue(Integer value) {
                 AppPreferences.setFontSize(value);
+              }
+
+              @Override
+              protected Integer convertString(String value) throws ParseException {
+                return StringUtil.parseInteger(value);
               }
             });
 
@@ -732,10 +806,15 @@ public class PreferencesDialog extends JDialog {
     upnpDiscoveryTimeoutTextField
         .getDocument()
         .addDocumentListener(
-            new DocumentListenerProxy(upnpDiscoveryTimeoutTextField) {
+            new DocumentListenerProxy<Integer>(upnpDiscoveryTimeoutTextField) {
               @Override
-              protected void storeNumericValue(int value) {
+              protected void storeNumericValue(Integer value) {
                 AppPreferences.setUpnpDiscoveryTimeout(value);
+              }
+
+              @Override
+              protected Integer convertString(String value) throws ParseException {
+                return StringUtil.parseInteger(value);
               }
             });
     fileSyncPathButton.addActionListener(
@@ -938,7 +1017,32 @@ public class PreferencesDialog extends JDialog {
             AppPreferences.setMovementMetric((WalkerMetric) movementMetricCombo.getSelectedItem());
           }
         });
-    // showInitGainMessage
+
+    DefaultComboBoxModel macroEditorThemeModel = new DefaultComboBoxModel();
+    try (Stream<Path> paths = Files.list(AppConstants.THEMES_DIR.toPath())) {
+      paths
+          .filter(Files::isRegularFile)
+          .filter(p -> p.toString().toLowerCase().endsWith(".xml"))
+          .forEach(
+              p ->
+                  macroEditorThemeModel.addElement(
+                      FilenameUtils.removeExtension(p.getFileName().toString())));
+
+      macroEditorThemeModel.setSelectedItem(AppPreferences.getDefaultMacroEditorTheme());
+    } catch (IOException ioe) {
+      log.warn("Unable to list macro editor themes.", ioe);
+      macroEditorThemeModel.addElement("default");
+    }
+
+    macroEditorThemeCombo.setModel(macroEditorThemeModel);
+
+    macroEditorThemeCombo.addItemListener(
+        new ItemListener() {
+          public void itemStateChanged(ItemEvent e) {
+            AppPreferences.setDefaultMacroEditorTheme(
+                (String) macroEditorThemeModel.getSelectedItem());
+          }
+        });
 
     add(panel);
     pack();
@@ -979,6 +1083,9 @@ public class PreferencesDialog extends JDialog {
     newMapsHaveFOWCheckBox.setSelected(AppPreferences.getNewMapsHaveFOW());
     tokensPopupWarningWhenDeletedCheckBox.setSelected(AppPreferences.getTokensWarnWhenDeleted());
     tokensStartSnapToGridCheckBox.setSelected(AppPreferences.getTokensStartSnapToGrid());
+    tokensSnapWhileDraggingCheckBox.setSelected(AppPreferences.getTokensSnapWhileDragging());
+    hideMousePointerWhileDraggingCheckBox.setSelected(
+        AppPreferences.getHideMousePointerWhileDragging());
     newMapsVisibleCheckBox.setSelected(AppPreferences.getNewMapsVisible());
     newTokensVisibleCheckBox.setSelected(AppPreferences.getNewTokensVisible());
     stampsStartFreeSizeCheckBox.setSelected(AppPreferences.getObjectsStartFreesize());
@@ -991,7 +1098,7 @@ public class PreferencesDialog extends JDialog {
     forceFacingArrowCheckBox.setSelected(AppPreferences.getForceFacingArrow());
     backgroundsStartSnapToGridCheckBox.setSelected(AppPreferences.getBackgroundsStartSnapToGrid());
     defaultGridSizeTextField.setText(Integer.toString(AppPreferences.getDefaultGridSize()));
-    defaultUnitsPerCellTextField.setText(Integer.toString(AppPreferences.getDefaultUnitsPerCell()));
+    defaultUnitsPerCellTextField.setText(Double.toString(AppPreferences.getDefaultUnitsPerCell()));
     defaultVisionDistanceTextField.setText(
         Integer.toString(AppPreferences.getDefaultVisionDistance()));
     statsheetPortraitSize.setText(Integer.toString(AppPreferences.getPortraitSize()));
@@ -1012,6 +1119,7 @@ public class PreferencesDialog extends JDialog {
     autoRevealVisionOnGMMoveCheckBox.setSelected(AppPreferences.getAutoRevealVisionOnGMMovement());
     showSmiliesCheckBox.setSelected(AppPreferences.getShowSmilies());
     playSystemSoundCheckBox.setSelected(AppPreferences.getPlaySystemSounds());
+    playStreamsCheckBox.setSelected(AppPreferences.getPlayStreams());
     playSystemSoundOnlyWhenNotFocusedCheckBox.setSelected(
         AppPreferences.getPlaySystemSoundsOnlyWhenNotFocused());
     syrinscapeActiveCheckBox.setSelected(AppPreferences.getSyrinscapeActive());

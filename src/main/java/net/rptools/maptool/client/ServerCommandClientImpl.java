@@ -38,8 +38,14 @@ import net.rptools.maptool.model.drawing.Drawable;
 import net.rptools.maptool.model.drawing.DrawnElement;
 import net.rptools.maptool.model.drawing.Pen;
 import net.rptools.maptool.server.ServerCommand;
+import net.rptools.maptool.server.ServerMethodHandler;
 import net.rptools.maptool.server.ServerPolicy;
 
+/**
+ * This class is used by a client to send commands to the server. The methods of this class are
+ * typically accessed through MapTool.serverCommand(). Once sent, the commands are then received by
+ * the {@link ServerMethodHandler ServerMethodHandler}
+ */
 public class ServerCommandClientImpl implements ServerCommand {
 
   private final TimedEventQueue movementUpdateQueue = new TimedEventQueue(100);
@@ -127,6 +133,36 @@ public class ServerCommandClientImpl implements ServerCommand {
     makeServerCall(COMMAND.removeToken, zoneGUID, tokenGUID);
   }
 
+  /**
+   * Send the command updateTokenProperty to the server. The method doesn't send the whole Token,
+   * greatly reducing lag.
+   *
+   * @param zoneGUID the GUID of the zone the token is on
+   * @param tokenGUID the GUID of the token
+   * @param methodName the string with the setter for the token
+   * @param parameters an array of parameters
+   */
+  public void updateTokenProperty(
+      GUID zoneGUID, GUID tokenGUID, String methodName, Object[] parameters) {
+    makeServerCall(COMMAND.updateTokenProperty, zoneGUID, tokenGUID, methodName, parameters);
+  }
+
+  /**
+   * Simplifies the arguments for the method above.
+   *
+   * @param token the token to be updated
+   * @param methodName the method to be used
+   * @param parameters an array of parameters
+   */
+  public void updateTokenProperty(Token token, String methodName, Object... parameters) {
+    Zone zone = token.getZoneRenderer().getZone();
+    GUID tokenGUID = token.getId();
+    GUID zoneGUID = zone.getId();
+
+    token.updateProperty(zone, methodName, parameters); // update locally right away
+    updateTokenProperty(zoneGUID, tokenGUID, methodName, parameters);
+  }
+
   public void putLabel(GUID zoneGUID, Label label) {
     makeServerCall(COMMAND.putLabel, zoneGUID, label);
   }
@@ -161,6 +197,11 @@ public class ServerCommandClientImpl implements ServerCommand {
 
   public void message(TextMessage message) {
     makeServerCall(COMMAND.message, message);
+  }
+
+  @Override
+  public void execLink(String link, String target) {
+    makeServerCall(COMMAND.execLink, link, target);
   }
 
   public void showPointer(String player, Pointer pointer) {

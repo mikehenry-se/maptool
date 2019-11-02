@@ -626,12 +626,8 @@ public class ZoneView implements ModelChangeListener {
           continue;
         }
       } else {
-        // If we're viewing the map as a player and the token is not a PC or we're not the GM, then
-        // skip it.
-        // This used to be the code:
-        // if ((token.getType() != Token.Type.PC && !view.isGMView() || (!view.isGMView() &&
-        // MapTool.getPlayer().getRole() == Role.GM))) {
-        if (!isGMview && (token.getType() != Token.Type.PC || MapTool.getPlayer().isGM())) {
+        // If we're viewing the map as a player and the token is not a PC, then skip it.
+        if (!isGMview && (token.getType() != Token.Type.PC)) {
           continue;
         }
       }
@@ -719,7 +715,10 @@ public class ZoneView implements ModelChangeListener {
     }
   }
 
-  /** @return */
+  /**
+   * @param tokens the list of token
+   * @return if the token has VBL or not
+   */
   private boolean processTokenAddChangeEvent(List<Token> tokens) {
     boolean hasSight = false;
     boolean hasVBL = false;

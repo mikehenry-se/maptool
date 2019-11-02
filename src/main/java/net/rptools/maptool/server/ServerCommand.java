@@ -49,11 +49,13 @@ public interface ServerCommand {
     removeAsset,
     putToken,
     removeToken,
+    updateTokenProperty,
     draw,
     updateDrawing,
     clearAllDrawings,
     setZoneGridSize,
     message,
+    execLink,
     undoDraw,
     showPointer,
     movePointer,
@@ -134,6 +136,11 @@ public interface ServerCommand {
 
   public void removeToken(GUID zoneGUID, GUID tokenGUID);
 
+  public void updateTokenProperty(
+      GUID zoneGUID, GUID tokenGUID, String methodName, Object[] parameters);
+
+  public void updateTokenProperty(Token token, String methodName, Object... parameters);
+
   public void putLabel(GUID zoneGUID, Label label);
 
   public void removeLabel(GUID zoneGUID, GUID labelGUID);
@@ -147,6 +154,8 @@ public interface ServerCommand {
   public void setZoneGridSize(GUID zoneGUID, int xOffset, int yOffset, int size, int color);
 
   public void message(TextMessage message);
+
+  public void execLink(String link, String target);
 
   public void showPointer(String player, Pointer pointer);
 

@@ -53,6 +53,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import javax.imageio.ImageIO;
+import javax.imageio.spi.IIORegistry;
 import javax.swing.BorderFactory;
 import javax.swing.ImageIcon;
 import javax.swing.JFrame;
@@ -83,6 +84,7 @@ import net.rptools.maptool.client.ui.ConnectionStatusPanel;
 import net.rptools.maptool.client.ui.MapToolFrame;
 import net.rptools.maptool.client.ui.OSXAdapter;
 import net.rptools.maptool.client.ui.StartServerDialogPreferences;
+import net.rptools.maptool.client.ui.logger.LogConsoleFrame;
 import net.rptools.maptool.client.ui.zone.PlayerView;
 import net.rptools.maptool.client.ui.zone.ZoneRenderer;
 import net.rptools.maptool.client.ui.zone.ZoneRendererFactory;
@@ -116,11 +118,13 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.Appender;
 import org.apache.logging.log4j.core.appender.FileAppender;
+import org.apache.logging.log4j.core.appender.RollingFileAppender;
 import org.apache.logging.log4j.core.config.Configurator;
 
 /** */
 public class MapTool {
   private static final Logger log = LogManager.getLogger(MapTool.class);
+
   private static SentryClient sentry;
 
   /**
@@ -172,6 +176,7 @@ public class MapTool {
   private static JMenuBar menuBar;
   private static MapToolFrame clientFrame;
   private static NoteFrame profilingNoteFrame;
+  private static LogConsoleFrame logConsoleFrame;
   private static MapToolServer server;
   private static ServerCommand serverCommand;
   private static ServerPolicy serverPolicy;
@@ -530,6 +535,11 @@ public class MapTool {
     return soundManager;
   }
 
+  /**
+   * Play the sound registered to an eventId.
+   *
+   * @param eventId the eventId of the sound.
+   */
   public static void playSound(String eventId) {
     if (AppPreferences.getPlaySystemSounds()) {
       if (AppPreferences.getPlaySystemSoundsOnlyWhenNotFocused() && isInFocus()) {
@@ -739,6 +749,17 @@ public class MapTool {
     return profilingNoteFrame;
   }
 
+  public static JFrame getLogConsoleNoteFrame() {
+    if (logConsoleFrame == null) {
+      logConsoleFrame = new LogConsoleFrame();
+      logConsoleFrame.setVisible(true);
+
+      if (clientFrame != null) SwingUtil.centerOver(logConsoleFrame, clientFrame);
+    }
+
+    return logConsoleFrame;
+  }
+
   public static String getVersion() {
     return version;
   }
@@ -881,10 +902,26 @@ public class MapTool {
    */
   public static void addGlobalMessage(String message, List<String> targets) {
     for (String target : targets) {
-      if ("gm".equalsIgnoreCase(target)) {
-        addMessage(TextMessage.gm(null, message));
-      } else {
-        addMessage(TextMessage.whisper(null, target, message));
+      switch (target.toLowerCase()) {
+        case "gm-self":
+          if (!MapTool.getPlayer().isGM()) {
+            // don't duplicate message if self is GM
+            addMessage(TextMessage.whisper(null, MapTool.getPlayer().getName(), message));
+          } // FALLTHRU
+        case "gm":
+          addMessage(TextMessage.gm(null, message));
+          break;
+        case "self":
+          addMessage(TextMessage.whisper(null, MapTool.getPlayer().getName(), message));
+          break;
+        case "all":
+          addGlobalMessage(message);
+          break;
+        case "none":
+          break;
+        default:
+          addMessage(TextMessage.whisper(null, target, message));
+          break;
       }
     }
   }
@@ -1472,11 +1509,20 @@ public class MapTool {
     org.apache.logging.log4j.core.Logger loggerImpl = (org.apache.logging.log4j.core.Logger) log;
     Appender appender = loggerImpl.getAppenders().get("LogFile");
 
-    if (appender != null) return ((FileAppender) appender).getFileName();
-    else return "NOT_CONFIGURED";
+    if (appender != null)
+      if (appender instanceof FileAppender) return ((FileAppender) appender).getFileName();
+      else if (appender instanceof RollingFileAppender)
+        return ((RollingFileAppender) appender).getFileName();
+
+    return "NOT_CONFIGURED";
   }
 
   public static void main(String[] args) {
+    log.info("********************************************************************************");
+    log.info("**                                                                            **");
+    log.info("**                              MapTool Started!                              **");
+    log.info("**                                                                            **");
+    log.info("********************************************************************************");
     log.info("AppHome System Property: " + System.getProperty("appHome"));
     log.info("Logging to: " + getLoggerFileName());
 
@@ -1549,7 +1595,7 @@ public class MapTool {
 
     if (listMacros) {
       String logOutput = "";
-      List<String> macroList = parser.listAllMacroFunctions();
+      List<String> macroList = new ArrayList<>(parser.listAllMacroFunctions().keySet());
       Collections.sort(macroList);
 
       for (String macro : macroList) {
@@ -1607,6 +1653,11 @@ public class MapTool {
     }
 
     URL.setURLStreamHandlerFactory(factory);
+
+    // Register ImageReaderSpi for jpeg2000 from JAI manually (issue due to uberJar packaging)
+    // https://github.com/jai-imageio/jai-imageio-core/issues/29
+    IIORegistry registry = IIORegistry.getDefaultInstance();
+    registry.registerServiceProvider(new com.github.jaiimageio.jpeg2000.impl.J2KImageReaderSpi());
 
     final Toolkit tk = Toolkit.getDefaultToolkit();
     tk.getSystemEventQueue().push(new MapToolEventQueue());
