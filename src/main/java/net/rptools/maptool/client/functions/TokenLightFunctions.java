@@ -14,12 +14,13 @@
  */
 package net.rptools.maptool.client.functions;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonPrimitive;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import net.rptools.maptool.client.MapTool;
-import net.rptools.maptool.client.MapToolVariableResolver;
 import net.rptools.maptool.language.I18N;
 import net.rptools.maptool.model.Direction;
 import net.rptools.maptool.model.GUID;
@@ -29,7 +30,6 @@ import net.rptools.maptool.util.FunctionUtil;
 import net.rptools.parser.Parser;
 import net.rptools.parser.ParserException;
 import net.rptools.parser.function.AbstractFunction;
-import net.sf.json.JSONArray;
 
 public class TokenLightFunctions extends AbstractFunction {
   private static final TokenLightFunctions instance = new TokenLightFunctions();
@@ -45,22 +45,19 @@ public class TokenLightFunctions extends AbstractFunction {
   @Override
   public Object childEvaluate(Parser parser, String functionName, List<Object> parameters)
       throws ParserException {
-    MapToolVariableResolver resolver = (MapToolVariableResolver) parser.getVariableResolver();
-
     if (functionName.equalsIgnoreCase("hasLightSource")) {
       FunctionUtil.checkNumberParam(functionName, parameters, 0, 4);
 
       String type = (parameters.size() > 0) ? parameters.get(0).toString() : "*";
       String name = (parameters.size() > 1) ? parameters.get(1).toString() : "*";
-      Token token = FunctionUtil.getTokenFromParam(resolver, functionName, parameters, 2, 3);
+      Token token = FunctionUtil.getTokenFromParam(parser, functionName, parameters, 2, 3);
       return hasLightSource(token, type, name) ? BigDecimal.ONE : BigDecimal.ZERO;
     }
     if (functionName.equalsIgnoreCase("clearLights")) {
       FunctionUtil.checkNumberParam(functionName, parameters, 0, 2);
 
-      Token token = FunctionUtil.getTokenFromParam(resolver, functionName, parameters, 0, 1);
-      MapTool.serverCommand().updateTokenProperty(token, "clearLightSources");
-      MapTool.getFrame().updateTokenTree();
+      Token token = FunctionUtil.getTokenFromParam(parser, functionName, parameters, 0, 1);
+      MapTool.serverCommand().updateTokenProperty(token, Token.Update.clearLightSources);
       return "";
     }
     if (functionName.equalsIgnoreCase("setLight")) {
@@ -69,7 +66,7 @@ public class TokenLightFunctions extends AbstractFunction {
       String type = parameters.get(0).toString();
       String name = parameters.get(1).toString();
       BigDecimal value = FunctionUtil.paramAsBigDecimal(functionName, parameters, 2, false);
-      Token token = FunctionUtil.getTokenFromParam(resolver, functionName, parameters, 3, 4);
+      Token token = FunctionUtil.getTokenFromParam(parser, functionName, parameters, 3, 4);
       return setLight(token, type, name, value);
     }
     if (functionName.equalsIgnoreCase("getLights")) {
@@ -77,7 +74,7 @@ public class TokenLightFunctions extends AbstractFunction {
 
       String type = parameters.size() > 0 ? parameters.get(0).toString() : "*";
       String delim = parameters.size() > 1 ? parameters.get(1).toString() : ",";
-      Token token = FunctionUtil.getTokenFromParam(resolver, functionName, parameters, 2, 3);
+      Token token = FunctionUtil.getTokenFromParam(parser, functionName, parameters, 2, 3);
       return getLights(token, type, delim);
     }
     return null;
@@ -93,7 +90,8 @@ public class TokenLightFunctions extends AbstractFunction {
    * @return a string list containing the lights that are on.
    * @throws ParserException if the light type can't be found.
    */
-  private String getLights(Token token, String category, String delim) throws ParserException {
+  private static String getLights(Token token, String category, String delim)
+      throws ParserException {
     ArrayList<String> lightList = new ArrayList<String>();
     Map<String, Map<GUID, LightSource>> lightSourcesMap =
         MapTool.getCampaign().getLightSourcesMap();
@@ -119,7 +117,9 @@ public class TokenLightFunctions extends AbstractFunction {
       }
     }
     if ("json".equals(delim)) {
-      return JSONArray.fromObject(lightList).toString();
+      JsonArray jarr = new JsonArray();
+      lightList.forEach(l -> jarr.add(new JsonPrimitive(l)));
+      return jarr.toString();
     } else {
       return StringFunctions.getInstance().join(lightList, delim);
     }
@@ -135,7 +135,7 @@ public class TokenLightFunctions extends AbstractFunction {
    * @return 0 if the light was not found, otherwise 1;
    * @throws ParserException if the light type can't be found.
    */
-  private BigDecimal setLight(Token token, String category, String name, BigDecimal val)
+  private static BigDecimal setLight(Token token, String category, String name, BigDecimal val)
       throws ParserException {
     boolean found = false;
     Map<String, Map<GUID, LightSource>> lightSourcesMap =
@@ -146,10 +146,10 @@ public class TokenLightFunctions extends AbstractFunction {
         if (ls.getName().equals(name)) {
           found = true;
           if (val.equals(BigDecimal.ZERO)) {
-            MapTool.serverCommand().updateTokenProperty(token, "removeLightSource", ls);
+            MapTool.serverCommand().updateTokenProperty(token, Token.Update.removeLightSource, ls);
           } else {
             MapTool.serverCommand()
-                .updateTokenProperty(token, "addLightSource", ls, Direction.CENTER);
+                .updateTokenProperty(token, Token.Update.addLightSource, ls, Direction.CENTER);
           }
         }
       }
@@ -157,9 +157,6 @@ public class TokenLightFunctions extends AbstractFunction {
       throw new ParserException(
           I18N.getText("macro.function.tokenLight.unknownLightType", "setLights", category));
     }
-    MapTool.getFrame().updateTokenTree();
-    token.getZoneRenderer().flushLight();
-
     return found ? BigDecimal.ONE : BigDecimal.ZERO;
   }
 
@@ -175,7 +172,8 @@ public class TokenLightFunctions extends AbstractFunction {
    * @return true if the token has the light source.
    * @throws ParserException if the light type can't be found.
    */
-  private boolean hasLightSource(Token token, String category, String name) throws ParserException {
+  public static boolean hasLightSource(Token token, String category, String name)
+      throws ParserException {
     if (category.equals("*") && name.equals("*")) {
       return token.hasLightSources();
     }

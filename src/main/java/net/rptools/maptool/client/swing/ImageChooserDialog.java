@@ -60,20 +60,32 @@ public class ImageChooserDialog extends JDialog {
 
     imageChooser.addImageSelectionListener(
         new SelectionListener() {
+          @Override
           public void selectionPerformed(List<Object> selected) {
-            if (selected.size() < 0 || (Integer) selected.get(0) < 0) {
+            if (selected.isEmpty() || (Integer) selected.get(0) < 0) {
               return;
             }
 
+            // Sometimes asset is coming back null causing an NPE. Could not reproduce but am
+            // putting in a check for it.  On Sentry:  MAPTOOL-11H
             Asset asset = imageChooser.getAsset((Integer) selected.get(0));
-            imageId = asset.getId();
+            if (asset != null) {
+              imageId = asset.getId();
 
-            // Put the asset into the asset manager since we have the asset handy here
-            AssetManager.putAsset(asset);
+              // Put the asset into the asset manager since we have the asset handy here
+              AssetManager.putAsset(asset);
+            } else {
+              MapTool.showError("msg.asset.error.invalidAsset");
+            }
           }
         });
   }
 
+  /**
+   * Returns the asset ID of the last selected image.
+   *
+   * @return Asset ID
+   */
   public MD5Key getImageId() {
     return imageId;
   }
@@ -91,6 +103,7 @@ public class ImageChooserDialog extends JDialog {
     JButton button = new JButton("OK");
     button.addActionListener(
         new ActionListener() {
+          @Override
           public void actionPerformed(java.awt.event.ActionEvent e) {
             setVisible(false);
           }
@@ -103,6 +116,7 @@ public class ImageChooserDialog extends JDialog {
     JButton button = new JButton("Cancel");
     button.addActionListener(
         new ActionListener() {
+          @Override
           public void actionPerformed(java.awt.event.ActionEvent e) {
             imageId = null;
             setVisible(false);

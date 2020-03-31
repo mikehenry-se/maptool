@@ -14,6 +14,8 @@
  */
 package net.rptools.maptool.client.functions;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,8 +28,6 @@ import net.rptools.maptool.util.FunctionUtil;
 import net.rptools.parser.Parser;
 import net.rptools.parser.ParserException;
 import net.rptools.parser.function.AbstractFunction;
-import net.sf.json.JSONArray;
-import net.sf.json.JSONObject;
 import org.apache.commons.lang.StringUtils;
 
 public class LookupTableFunction extends AbstractFunction {
@@ -82,9 +82,13 @@ public class LookupTableFunction extends AbstractFunction {
       if (params.size() > 0) {
         delim = params.get(0).toString();
       }
-      if ("json".equalsIgnoreCase(delim))
-        return JSONArray.fromObject(getTableList(MapTool.getPlayer().isGM()));
-
+      if ("json".equalsIgnoreCase(delim)) {
+        JsonArray jsonArray = new JsonArray();
+        for (String table : getTableList(MapTool.getPlayer().isGM())) {
+          jsonArray.add(table);
+        }
+        return jsonArray;
+      }
       return StringUtils.join(getTableList(MapTool.getPlayer().isGM()), delim);
 
     } else if ("getTableVisible".equalsIgnoreCase(function)) {
@@ -102,7 +106,7 @@ public class LookupTableFunction extends AbstractFunction {
       String name = params.get(0).toString();
       String visible = params.get(1).toString();
       LookupTable lookupTable = getMaptoolTable(name, function);
-      lookupTable.setVisible(AbstractTokenAccessorFunction.getBooleanValue(visible));
+      lookupTable.setVisible(FunctionUtil.getBooleanValue(visible));
       MapTool.serverCommand().updateCampaign(MapTool.getCampaign().getCampaignProperties());
       return lookupTable.getVisible() ? "1" : "0";
 
@@ -121,7 +125,7 @@ public class LookupTableFunction extends AbstractFunction {
       String name = params.get(0).toString();
       String access = params.get(1).toString();
       LookupTable lookupTable = getMaptoolTable(name, function);
-      lookupTable.setAllowLookup(AbstractTokenAccessorFunction.getBooleanValue(access));
+      lookupTable.setAllowLookup(FunctionUtil.getBooleanValue(access));
       MapTool.serverCommand().updateCampaign(MapTool.getCampaign().getCampaignProperties());
       return lookupTable.getAllowLookup() ? "1" : "0";
 
@@ -201,8 +205,8 @@ public class LookupTableFunction extends AbstractFunction {
       }
       LookupTable lookupTable = new LookupTable();
       lookupTable.setName(name);
-      lookupTable.setVisible(AbstractTokenAccessorFunction.getBooleanValue(visible));
-      lookupTable.setAllowLookup(AbstractTokenAccessorFunction.getBooleanValue(lookups));
+      lookupTable.setVisible(FunctionUtil.getBooleanValue(visible));
+      lookupTable.setAllowLookup(FunctionUtil.getBooleanValue(lookups));
       if (asset != null) lookupTable.setTableImage(asset);
       MapTool.getCampaign().getLookupTableMap().put(name, lookupTable);
       MapTool.serverCommand().updateCampaign(MapTool.getCampaign().getCampaignProperties());
@@ -226,7 +230,13 @@ public class LookupTableFunction extends AbstractFunction {
       FunctionUtil.checkNumberParam("getTableImage", params, 1, 1);
       String name = params.get(0).toString();
       LookupTable lookupTable = getMaptoolTable(name, function);
-      return lookupTable.getTableImage();
+      MD5Key img = lookupTable.getTableImage();
+      if (img == null) {
+        // Returning null causes an NPE when output is dumped to chat.
+        return "";
+      } else {
+        return img;
+      }
 
     } else if ("setTableImage".equalsIgnoreCase(function)) {
 
@@ -295,16 +305,16 @@ public class LookupTableFunction extends AbstractFunction {
       if (rollInt < entry.getMin() || rollInt > entry.getMax())
         return ""; // entry was found but doesn't match
 
-      JSONObject entryDetails = new JSONObject();
-      entryDetails.put("min", entry.getMin());
-      entryDetails.put("max", entry.getMax());
-      entryDetails.put("value", entry.getValue());
+      JsonObject entryDetails = new JsonObject();
+      entryDetails.addProperty("min", entry.getMin());
+      entryDetails.addProperty("max", entry.getMax());
+      entryDetails.addProperty("value", entry.getValue());
 
       MD5Key imageId = entry.getImageId();
       if (imageId != null) {
-        entryDetails.put("assetid", "asset://" + imageId.toString());
+        entryDetails.addProperty("assetid", "asset://" + imageId.toString());
       } else {
-        entryDetails.put("assetid", "");
+        entryDetails.addProperty("assetid", "");
       }
       return entryDetails;
 
@@ -437,9 +447,13 @@ public class LookupTableFunction extends AbstractFunction {
    * "asset://" urls.
    *
    * @param assetString String containing either an asset ID or asset URL.
-   * @return MD5Key asset id.
+   * @return MD5Key asset id or null
    */
   private MD5Key getAssetFromString(String assetString) {
+    if (assetString.isEmpty()) {
+      return null;
+    }
+
     if (assetString.toLowerCase().startsWith("asset://")) {
       String id = assetString.substring(8);
       return new MD5Key(id);

@@ -345,6 +345,9 @@ public class AppPreferences {
   private static final String KEY_DEFAULT_VISION_DISTANCE = "defaultVisionDistance";
   private static final int DEFAULT_DEFAULT_VISION_DISTANCE = 1000;
 
+  private static final String KEY_DEFAULT_VISION_TYPE = "defaultVisionType";
+  private static final Zone.VisionType DEFAULT_VISION_TYPE = Zone.VisionType.OFF;
+
   private static final String KEY_FONT_SIZE = "fontSize";
   private static final int DEFAULT_FONT_SIZE = 12;
 
@@ -425,6 +428,9 @@ public class AppPreferences {
 
   private static final String KEY_TYPING_NOTIFICATION_DURATION = "typingNotificationDuration";
   private static final int DEFAULT_TYPING_NOTIFICATION_DURATION = 5000;
+
+  private static final String KEY_FRAME_RATE_CAP = "frameRateCap";
+  private static final int DEFAULT_FRAME_RATE_CAP = 60;
 
   private static final String KEY_UPNP_DISCOVERY_TIMEOUT = "upnpDiscoveryTimeout";
   private static final int DEFAULT_UPNP_DISCOVERY_TIMEOUT = 5000;
@@ -673,6 +679,19 @@ public class AppPreferences {
     return prefs.getInt(KEY_DEFAULT_VISION_DISTANCE, DEFAULT_DEFAULT_VISION_DISTANCE);
   }
 
+  public static void setDefaultVisionType(Zone.VisionType visionType) {
+    prefs.put(KEY_DEFAULT_VISION_TYPE, visionType.toString());
+  }
+
+  public static Zone.VisionType getDefaultVisionType() {
+    try {
+      return Zone.VisionType.valueOf(
+          prefs.get(KEY_DEFAULT_VISION_TYPE, DEFAULT_VISION_TYPE.toString()));
+    } catch (Exception e) {
+      return DEFAULT_VISION_TYPE;
+    }
+  }
+
   public static void setUseSoftFogEdges(boolean flag) {
     prefs.putBoolean(KEY_USE_SOFT_FOG_EDGES, flag);
   }
@@ -853,6 +872,14 @@ public class AppPreferences {
 
   public static void setMovementMetric(WalkerMetric metric) {
     prefs.put(KEY_MOVEMENT_METRIC, metric.toString());
+  }
+
+  public static void setFrameRateCap(int cap) {
+    prefs.putInt(KEY_FRAME_RATE_CAP, cap);
+  }
+
+  public static int getFrameRateCap() {
+    return prefs.getInt(KEY_FRAME_RATE_CAP, DEFAULT_FRAME_RATE_CAP);
   }
 
   public static void setUpnpDiscoveryTimeout(int timeout) {

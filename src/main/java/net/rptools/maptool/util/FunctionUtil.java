@@ -14,18 +14,21 @@
  */
 package net.rptools.maptool.util;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import java.math.BigDecimal;
 import java.util.List;
 import net.rptools.maptool.client.MapTool;
 import net.rptools.maptool.client.MapToolVariableResolver;
 import net.rptools.maptool.client.functions.FindTokenFunctions;
-import net.rptools.maptool.client.functions.JSONMacroFunctions;
+import net.rptools.maptool.client.functions.json.JSONMacroFunctions;
+import net.rptools.maptool.client.ui.zone.ZoneRenderer;
 import net.rptools.maptool.language.I18N;
 import net.rptools.maptool.model.Token;
+import net.rptools.parser.Parser;
 import net.rptools.parser.ParserException;
 import net.rptools.parser.function.Function;
-import net.sf.json.JSONArray;
-import net.sf.json.JSONObject;
 
 /**
  * Provides static methods to help handle macro functions.
@@ -80,7 +83,6 @@ public class FunctionUtil {
    * the list size before trying to retrieve the token so it is safe to use for functions that have
    * the token as a optional argument.
    *
-   * @param res the variable resolver
    * @param functionName the function name (used for generating exception messages).
    * @param param the parameters for the function
    * @param indexToken the index to find the token at. If -1, use current token instead.
@@ -90,11 +92,7 @@ public class FunctionUtil {
    *     token can not be found, or if no token is specified and no token is impersonated.
    */
   public static Token getTokenFromParam(
-      MapToolVariableResolver res,
-      String functionName,
-      List<Object> param,
-      int indexToken,
-      int indexMap)
+      Parser parser, String functionName, List<Object> param, int indexToken, int indexMap)
       throws ParserException {
 
     int size = param.size();
@@ -116,12 +114,40 @@ public class FunctionUtil {
         }
       }
     } else {
-      token = res.getTokenInContext();
+      token = ((MapToolVariableResolver) parser.getVariableResolver()).getTokenInContext();
       if (token == null) {
         throw new ParserException(I18N.getText(KEY_NO_IMPERSONATED, functionName));
       }
     }
     return token;
+  }
+
+  /**
+   * Gets the ZoneRender from the specified index or returns the current ZoneRender. This method
+   * will check the list size before trying to retrieve the token so it is safe to use for functions
+   * that have the map as a optional argument.
+   *
+   * @param functionName the function name (used for generating exception messages).
+   * @param param the parameters for the function
+   * @param indexMap the index to find the map name at. If -1, use current map instead.
+   * @return the ZoneRenderer.
+   * @throws ParserException if the map cannot be found
+   */
+  public static ZoneRenderer getZoneRendererFromParam(
+      String functionName, List<Object> param, int indexMap) throws ParserException {
+
+    String map = indexMap >= 0 && param.size() > indexMap ? param.get(indexMap).toString() : null;
+
+    ZoneRenderer zoneRenderer;
+    if (map == null) {
+      zoneRenderer = MapTool.getFrame().getCurrentZoneRenderer();
+    } else {
+      zoneRenderer = MapTool.getFrame().getZoneRenderer(map);
+      if (zoneRenderer == null) {
+        throw new ParserException(I18N.getText(KEY_UNKNOWN_MAP, functionName, map));
+      }
+    }
+    return zoneRenderer;
   }
 
   /**
@@ -277,13 +303,13 @@ public class FunctionUtil {
    * @return the parameter as a jsonObject or jsonArray
    * @throws ParserException if the parameter can't be converted to jsonObject or jsonArray
    */
-  public static Object paramAsJson(String functionName, List<Object> parameters, int index)
+  public static JsonElement paramAsJson(String functionName, List<Object> parameters, int index)
       throws ParserException {
-    Object obj = JSONMacroFunctions.asJSON(parameters.get(index));
-    if (!(obj instanceof JSONArray) && !(obj instanceof JSONObject)) {
+    JsonElement jsonElement = JSONMacroFunctions.getInstance().asJsonElement(parameters.get(index));
+    if (!jsonElement.isJsonObject() && !jsonElement.isJsonArray()) {
       throw new ParserException(I18N.getText(KEY_NOT_JSON, functionName, index + 1));
     }
-    return obj;
+    return jsonElement;
   }
 
   /**
@@ -296,12 +322,14 @@ public class FunctionUtil {
    * @return the parameter as a jsonObject
    * @throws ParserException if the parameter can't be converted to jsonObject
    */
-  public static JSONObject paramAsJsonObject(
+  public static JsonObject paramAsJsonObject(
       String functionName, List<Object> parameters, int index) throws ParserException {
-    Object obj = JSONMacroFunctions.asJSON(parameters.get(index));
-    if (!(obj instanceof JSONObject)) {
+    JsonElement jsonElement = paramAsJson(functionName, parameters, index);
+    if (!jsonElement.isJsonObject()) {
       throw new ParserException(I18N.getText(KEY_NOT_JSON_OBJECT, functionName, index + 1));
-    } else return (JSONObject) obj;
+    }
+
+    return jsonElement.getAsJsonObject();
   }
 
   /**
@@ -314,11 +342,98 @@ public class FunctionUtil {
    * @return the parameter as a jsonArray
    * @throws ParserException if the parameter can't be converted to jsonArray
    */
-  public static JSONArray paramAsJsonArray(String functionName, List<Object> parameters, int index)
+  public static JsonArray paramAsJsonArray(String functionName, List<Object> parameters, int index)
       throws ParserException {
-    Object obj = JSONMacroFunctions.asJSON(parameters.get(index));
-    if (!(obj instanceof JSONArray)) {
+    JsonElement jsonElement = paramAsJson(functionName, parameters, index);
+    if (!jsonElement.isJsonArray()) {
       throw new ParserException(I18N.getText(KEY_NOT_JSON_ARRAY, functionName, index + 1));
-    } else return (JSONArray) obj;
+    }
+
+    return jsonElement.getAsJsonArray();
+  }
+
+  /**
+   * Return the jsonElement value of a parameter. Throws a <code>ParserException</code> if the
+   * parameter can't be converted to a jsonArray.
+   *
+   * @param functionName this is used in the exception message
+   * @param parameters the list of parameters
+   * @param index the index of the parameter to return as jsonArray
+   * @return the parameter as a jsonArray
+   */
+  public static JsonElement paramConvertedToJson(
+      String functionName, List<Object> parameters, int index) {
+    try {
+      return paramAsJson(functionName, parameters, index);
+    } catch (ParserException e) {
+      JsonArray json = new JsonArray();
+      Object val = parameters.get(index);
+      if (val.toString().length() > 0) {
+        if (val instanceof Number) {
+          json.add((Number) val);
+        } else {
+          json.add(val.toString());
+        }
+      }
+
+      return json;
+    }
+  }
+
+  /**
+   * Return the jsonObject or jsonArray value of a parameter. if the parameter can't be converted to
+   * a json. Then an empty json array will be returned if its an empty string, otherwise a a
+   * JsonArray containing the argument will be returned.
+   *
+   * @param functionName this is used in the exception message
+   * @param parameters the list of parameters
+   * @param index the index of the parameter to return as Json
+   * @return the parameter as a jsonObject or jsonArray
+   * @throws ParserException if the parameter can't be converted to jsonObject or jsonArray
+   */
+  public static JsonArray paramConvertedToJsonArray(
+      String functionName, List<Object> parameters, int index) throws ParserException {
+    JsonElement json = paramConvertedToJson(functionName, parameters, index);
+    if (!json.isJsonArray()) {
+      throw new ParserException(I18N.getText(KEY_NOT_JSON_ARRAY, functionName, index + 1));
+    } else {
+      return json.getAsJsonArray();
+    }
+  }
+  /**
+   * Convert an object into a boolean value. Never returns an error.
+   *
+   * @param value Convert this object. Must be {@link Boolean}, {@link BigDecimal}, or will have its
+   *     string value be converted to one of those types.
+   * @return The boolean value of the object
+   */
+  public static boolean getBooleanValue(Object value) {
+    boolean set = false;
+    if (value instanceof Boolean) {
+      set = ((Boolean) value).booleanValue();
+    } else if (value instanceof Number) {
+      set = ((Number) value).doubleValue() != 0;
+    } else if (value == null) {
+      set = false;
+    } else {
+      try {
+        set = !new BigDecimal(value.toString()).equals(BigDecimal.ZERO);
+      } catch (NumberFormatException e) {
+        set = Boolean.parseBoolean(value.toString());
+      } // endif
+    } // endif
+    return set;
+  }
+
+  /**
+   * Throw an exception if the macro isn't trusted.
+   *
+   * @param functionName the name of the function.
+   * @throws ParserException if the macro isn't trusted.
+   */
+  public static void blockUntrustedMacro(String functionName) throws ParserException {
+    if (!MapTool.getParser().isMacroTrusted()) {
+      throw new ParserException(I18N.getText("macro.function.general.noPerm", functionName));
+    }
   }
 }
