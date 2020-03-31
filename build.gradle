@@ -17,6 +17,7 @@ buildscript {
 // Access Git info from build script
 plugins {
     id "org.ajoberstar.grgit" version "4.0.1"
+    id 'org.openjfx.javafxplugin' version '0.0.8'
 }
 
 // Apply the java plugin to add support for Java
@@ -100,6 +101,11 @@ spotless {
         // or spaces. Takes an integer argument if you don't like 4
         indentWithSpaces(4)
     }
+}
+
+javafx {
+    version = "11"
+    modules = [ 'javafx.controls', 'javafx.media', 'javafx.swing' ]
 }
 
 jacoco {
